@@ -134,7 +134,7 @@
 (def pipe-fn
   (ml/pipeline
    (mm/select-columns [:OverallQual :GarageCars
-                       :GrLivArea :1stFlrSF :2ndFlrSF :TotalBsmtSF :GarageArea :Neighborhood :LotFrontage
+                       :GrLivArea :1stFlrSF :2ndFlrSF :TotalBsmtSF :GarageArea :Neighborhood
                        :SalePrice])
    (fn [ctx]
      (assoc ctx :metamorph.ml/full-ds (load-hp-data "train.csv.gz")))
@@ -144,8 +144,6 @@
    {:metamorph/id :model}
    (mm/model {:model-type :smile.regression/random-forest
               :max-depth 50
-              :max-nodes 50
-              :node-size 20
               :trees 1000})))
 
 
