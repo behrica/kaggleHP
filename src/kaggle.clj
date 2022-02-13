@@ -129,25 +129,33 @@
    (load-hp-data "train.csv.gz")
    (ds/split->seq :kfold)))
 
-(def trained-ctx
-  (pipe-fn {:metamorph/data titanic-train
-            :metamorph/mode :fit}))
+
 
 (def pipe-fn
   (ml/pipeline
-   (mm/select-columns [:OverallQual :SalePrice])
-   (mm/categorical->number [:OverallQual])
-   (ml/def-ctx ctx)
+   (mm/select-columns [:OverallQual :GarageCars
+                       :GrLivArea :1stFlrSF :2ndFlrSF :TotalBsmtSF :GarageArea :Neighborhood :LotFrontage
+                       :SalePrice])
+   (fn [ctx]
+     (assoc ctx :metamorph.ml/full-ds (load-hp-data "train.csv.gz")))
+   (mm/transform-one-hot [:OverallQual :GarageCars :Neighborhood] :full)
+
    (mm/set-inference-target :SalePrice)
    {:metamorph/id :model}
-   (mm/model {:model-type :smile.regression/random-forest})))
+   (mm/model {:model-type :smile.regression/random-forest
+              :max-depth 50
+              :max-nodes 50
+              :node-size 20
+              :trees 1000})))
+
+
 
 (def result
   (ml/evaluate-pipelines [pipe-fn] splits ml/rmse :loss))
 
 
 
-
+(-> result first first :test-transform :mean)
 
 
 (def best-pipe-fn (-> result first first :pipe-fn))
