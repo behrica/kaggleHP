@@ -185,31 +185,39 @@
    train-data
    (ds/split->seq :kfold)))
 
+(def cat-features [:OverallQual
+                   :GarageCars
+                   :Neighborhood
+                   :BsmtCond
+                   :PoolQC
+                   :OverallCond
+                   :ExterQual
+                   :TotRmsAbvGrd
+                   :BedroomAbvGr])
+
 (def pipe-fn
   (ml/pipeline
    (mm/replace-missing [:BsmtCond :PoolQC] :value :NA)
-   (mm/select-columns [:OverallQual :GarageCars :BsmtCond
-                       :OverallCond
-                       :GrLivArea :1stFlrSF :2ndFlrSF :TotalBsmtSF
-                       :GarageArea :Neighborhood :YearBuilt
-                       :ExterQual
+   (mm/select-columns
+    (concat cat-features
+            [
+             :GrLivArea :1stFlrSF :2ndFlrSF :TotalBsmtSF
+             :GarageArea  :YearBuilt
 
-                       :SalePrice])
+
+             :SalePrice]))
    (fn [ctx]
      (assoc ctx :metamorph.ml/full-ds train-data))
-   (mm/transform-one-hot [:OverallQual :GarageCars :Neighborhood
-                          :BsmtCond :PoolQC
-                          :OverallCond
-                          :ExterQual] :full)
+   (mm/transform-one-hot cat-features  :full)
 
    (mm/set-inference-target :SalePrice)
    {:metamorph/id :model}
    
    (mm/model {:model-type :smile.regression/gradient-tree-boost
-                :max-depth 20
-                :max-nodes 10
-                :node-size 8
-                :trees 1000})))
+              :max-depth 20
+              :max-nodes 10
+              :node-size 8
+              :trees 1000})))
 
 
 
