@@ -143,8 +143,10 @@
    (mm/set-inference-target :SalePrice)
    {:metamorph/id :model}
    (mm/model {:model-type :smile.regression/gradient-tree-boost
-              :max-depth 100
-              :trees 1000})))
+              :max-depth 50
+              :max-nodes 10
+              :node-size 8
+              :trees 2000})))
 
 
 
