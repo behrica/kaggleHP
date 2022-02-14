@@ -102,6 +102,7 @@
          :mark {:extent "min-max" :type "boxplot"}}})
 
 
+
 (clerk/vl
  {::clerk/width :full}
  {:$schema "https://vega.github.io/schema/vega-lite/v5.json"
@@ -114,9 +115,37 @@
          :encoding {
                     :x {:field {:repeat :repeat}
                         :type :quantitative
+                        :scale {:zero false}
                         :axis {:titleFontSize 20}}
                     :y {:field :SalePrice :scale {:zero false} :type "quantitative"}}
          :mark {:extent "min-max" :type "point"}}})
+
+
+(clerk/vl
+ {::clerk/width :full}
+ {:$schema "https://vega.github.io/schema/vega-lite/v5.json"
+  :data {:values
+         (-> df
+          (tc/select-columns [:YearBuilt :YearRemodAdd :YrSold :SalePrice])
+          (tc/rows :as-maps)
+          vec)}
+  :repeat [:YearBuilt :YearRemodAdd :YrSold]
+  :columns 3
+  :spec {
+         :width 200
+         :height 200
+         :encoding {
+                    :x {:field {:repeat :repeat}
+                        :type :quantitative
+                        :scale {:zero false}
+                        :axis {:titleFontSize 20}}
+                    :y {:field :SalePrice
+                        :scale {:zero false}
+                        :type "quantitative"}}
+         :mark { :type "point"}}})
+
+
+
 
 
 
@@ -133,12 +162,13 @@
 
 (def pipe-fn
   (ml/pipeline
-   (mm/select-columns [:OverallQual :GarageCars
-                       :GrLivArea :1stFlrSF :2ndFlrSF :TotalBsmtSF :GarageArea :Neighborhood
+   (mm/replace-missing [:BsmtCond :PoolQC] :value :NA)
+   (mm/select-columns [:OverallQual :GarageCars :BsmtCond
+                       :GrLivArea :1stFlrSF :2ndFlrSF :TotalBsmtSF :GarageArea :Neighborhood :YearBuilt
                        :SalePrice])
    (fn [ctx]
      (assoc ctx :metamorph.ml/full-ds (load-hp-data "train.csv.gz")))
-   (mm/transform-one-hot [:OverallQual :GarageCars :Neighborhood] :full)
+   (mm/transform-one-hot [:OverallQual :GarageCars :Neighborhood :BsmtCond :PoolQC] :full)
 
    (mm/set-inference-target :SalePrice)
    {:metamorph/id :model}
@@ -154,8 +184,8 @@
   (ml/evaluate-pipelines [pipe-fn] splits ml/rmse :loss))
 
 
-
-(-> result first first :test-transform :mean)
+(def mean-loss
+  (-> result first first :test-transform :mean))
 
 
 (def best-pipe-fn (-> result first first :pipe-fn))
