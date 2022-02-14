@@ -2,7 +2,9 @@
 
   (:require [nextjournal.clerk :as clerk]
             [tablecloth.api :as tc]
-            [nextjournal.clerk :as clerk]))
+            [nextjournal.clerk :as clerk]
+            [nextjournal.clerk.hashing :as h]
+            [weavejester.dependency :as dep]))
 
 
 (comment
@@ -10,10 +12,24 @@
   (clerk/serve! {:browse? true})
   (clerk/serve! {:watch-paths ["notebooks" "src"]}))
 
+(comment
+  (def parsed (h/parse-file "src/kaggle.clj"))
+  (def analyzed
+    (h/build-graph parsed))
+  (dep/transitive-dependencies (:graph analyzed) 'kaggle/result)
+  (def hashes
+    (h/hash analyzed))
 
+  (get hashes 'kaggle/pipe-fn)
+  (clerk/hash+store-in-cas! load-hp-data)
+
+  :ok)
+
+;; (clerk/eval-string "mean-loss")
 
 
 (defn load-hp-data [file]
+  (println "load file : " file)
   (-> (tc/dataset file {:key-fn keyword})
 
       (tc/convert-types (zipmap [:BedroomAbvGr
@@ -41,7 +57,7 @@
   clerk/table))
   
 
-
+;;  # The data
 ^{::clerk/width :full}
 (->table df)
  
@@ -53,10 +69,19 @@
  (tc/info)
  ->table)
 
+ ;; # Info on data
+;; ## data types
 (-> df
     tc/info
     :datatype
     frequencies)
+
+(-> df
+    tc/info
+    (tc/select-columns [:col-name :n-missing])
+    (tc/order-by :n-missing :desc)
+    ->table)
+
 
 (defn box-plot [var]
   (clerk/vl
@@ -81,8 +106,6 @@
       (tc/select-rows (fn [row] (= :int16 (:datatype row))))
       :col-name
       vec))
-
-;; (map box-plot)
 
 
 (clerk/vl
@@ -153,35 +176,46 @@
          '[scicloj.ml.metamorph :as mm]
          '[scicloj.ml.dataset :as ds])
 
+
+
+(def train-data (load-hp-data "train.csv.gz"))
+
 (def splits
   (->
-   (load-hp-data "train.csv.gz")
+   train-data
    (ds/split->seq :kfold)))
-
-
 
 (def pipe-fn
   (ml/pipeline
    (mm/replace-missing [:BsmtCond :PoolQC] :value :NA)
    (mm/select-columns [:OverallQual :GarageCars :BsmtCond
-                       :GrLivArea :1stFlrSF :2ndFlrSF :TotalBsmtSF :GarageArea :Neighborhood :YearBuilt
+                       :OverallCond
+                       :GrLivArea :1stFlrSF :2ndFlrSF :TotalBsmtSF
+                       :GarageArea :Neighborhood :YearBuilt
+                       :ExterQual
+
                        :SalePrice])
    (fn [ctx]
-     (assoc ctx :metamorph.ml/full-ds (load-hp-data "train.csv.gz")))
-   (mm/transform-one-hot [:OverallQual :GarageCars :Neighborhood :BsmtCond :PoolQC] :full)
+     (assoc ctx :metamorph.ml/full-ds train-data))
+   (mm/transform-one-hot [:OverallQual :GarageCars :Neighborhood
+                          :BsmtCond :PoolQC
+                          :OverallCond
+                          :ExterQual] :full)
 
    (mm/set-inference-target :SalePrice)
    {:metamorph/id :model}
+   
    (mm/model {:model-type :smile.regression/gradient-tree-boost
-              :max-depth 50
-              :max-nodes 10
-              :node-size 8
-              :trees 2000})))
+                :max-depth 20
+                :max-nodes 10
+                :node-size 8
+                :trees 1000})))
+
 
 
 
 (def result
-  (ml/evaluate-pipelines [pipe-fn] splits ml/rmse :loss))
+  (ml/evaluate-pipelines [pipe-fn] splits ml/rmse :loss {:evaluation-handler-fn (fn [m] (dissoc m :pipe-fn :metric-fn))}))
 
 
 (def mean-loss
@@ -191,12 +225,15 @@
 (def best-pipe-fn (-> result first first :pipe-fn))
 
 (def trained-ctx
-  (pipe-fn {:metamorph/data (load-hp-data "train.csv.gz")
+  (pipe-fn {:metamorph/data train-data
             :metamorph/mode :fit}))
 
+(def test-data
+  (load-hp-data "test.csv.gz"))
+
 (def df-test
-  (-> (load-hp-data "test.csv.gz")
-      (tc/add-column :SalePrice 0)))
+  (-> test-data
+   (tc/add-column :SalePrice 0)))
 
 (def test-ctx
   (pipe-fn
