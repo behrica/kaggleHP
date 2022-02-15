@@ -4,32 +4,33 @@
             [tablecloth.api :as tc]
             [nextjournal.clerk :as clerk]
             [nextjournal.clerk.hashing :as h]
-            [weavejester.dependency :as dep]))
+            [weavejester.dependency :as dep]
+            [clojure.string :as str]
+            [opencpu-clj.ocpu :as ocpu]))
 
+
+(comment
+  (def r
+    (ocpu/object "http://localhost" :library "ppsr" :R "score_df"
+                 {:df "iris"} :json ""))
+
+  (ocpu/object "http://cloud.opencpu.org" :library "stats" :R "rnorm" {:n 10} :json nil)
+
+  (ocpu/object "https://cloud.opencpu.org" :library "base" :R "seq" {:from 1 :to 5} :json nil))
+
+
+
+ 
 
 (comment
   (clerk/clear-cache!)
   (clerk/serve! {:browse? true})
   (clerk/serve! {:watch-paths ["notebooks" "src"]}))
 
-(comment
-  (def parsed (h/parse-file "src/kaggle.clj"))
-  (def analyzed
-    (h/build-graph parsed))
-  (dep/transitive-dependencies (:graph analyzed) 'kaggle/result)
-  (def hashes
-    (h/hash analyzed))
-
-  (get hashes 'kaggle/pipe-fn)
-  (clerk/hash+store-in-cas! load-hp-data)
-
-  :ok)
-
-;; (clerk/eval-string "mean-loss")
 
 
 (defn load-hp-data [file]
-  (println "load file : " file)
+  (println "load a file : " file)
   (-> (tc/dataset file {:key-fn keyword})
 
       (tc/convert-types (zipmap [:BedroomAbvGr
@@ -223,7 +224,13 @@
 
 
 (def result
-  (ml/evaluate-pipelines [pipe-fn] splits ml/rmse :loss {:evaluation-handler-fn (fn [m] (dissoc m :pipe-fn :metric-fn))}))
+  (ml/evaluate-pipelines [pipe-fn] splits ml/rmse
+                         :loss))
+                         ;; {:evaluation-handler-fn
+                         ;;  (fn [m] (dissoc m
+                         ;;                 ;; :pipe-fn
+                         ;;                 :metric-fn))}
+
 
 
 (def mean-loss
