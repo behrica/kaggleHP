@@ -1,6 +1,6 @@
 {:deps {scicloj/scicloj.ml {:mvn/version "0.1.4"}
         io.github.nextjournal/clerk {:mvn/version "0.5.346"}
-        opencpu-clj/opencpu-clj {:mvn/version "0.3.0"}}
+        opencpu-clj/opencpu-clj {:mvn/version "0.3.1"}}
 
 
 

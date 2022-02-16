@@ -6,15 +6,22 @@
             [nextjournal.clerk.hashing :as h]
             [weavejester.dependency :as dep]
             [clojure.string :as str]
-            [opencpu-clj.ocpu :as ocpu]))
+            [opencpu-clj.ocpu :as ocpu]
+            [clojure.java.io :as io])
+  (:import [javax.imageio ImageIO]))
+
 
 
 (comment
-  (def r
-    (ocpu/object "http://localhost" :library "ppsr" :R "score_df"
-                 {:df "iris"} :json ""))
 
-  (ocpu/object "http://cloud.opencpu.org" :library "stats" :R "rnorm" {:n 10} :json nil)
+  (def r
+    (ocpu/object base-url :library "ppsr" :R "score_df"
+                 {:df "iris"} :json))
+
+
+
+
+  (ocpu/object "http://cloud.opencpu.org" :library "stats" :R "rnorm" {:n 10} :json)
 
   (ocpu/object "https://cloud.opencpu.org" :library "base" :R "seq" {:from 1 :to 5} :json nil))
 
@@ -23,6 +30,8 @@
  
 
 (comment
+  (clerk/blob->result)
+  (clerk/recompute!)
   (clerk/clear-cache!)
   (clerk/serve! {:browse? true})
   (clerk/serve! {:watch-paths ["notebooks" "src"]}))
@@ -169,9 +178,67 @@
          :mark { :type "point"}}})
 
 
+;;  # PPS
+
+;; (def base-url "https://my-container-app.livelybay-00debe37.westeurope.azurecontainerapps.io")
+(def base-url "http://localhost:8080")
+(def candidate-features [:OverallQual
+                         :GarageCars
+                         :Neighborhood
+                         :BsmtCond
+                         :PoolQC
+                         :OverallCond
+                         :ExterQual
+                         :TotRmsAbvGrd
+                         :BedroomAbvGr
+                         :SalePrice])
+(-> df
+    ;; (tc/select-columns candidate-features)
+    (tc/write-csv! "/tmp/out.csv"))
+
+(defn r-object [library function params]
+  (-> (ocpu/object base-url :library library  :R function params)
+      :result
+      first
+      (str/split #"/")
+      (nth 3)))
+
+(defn r-graph [library function params]
+  (-> (ocpu/object base-url :library library  :R function params)
+      :result
+      (nth 2)))
 
 
 
+;; (nth 2)
+
+
+(defn render-pps []
+  (let [
+        last-run  #inst "2022-02-16T14:59:44.871-00:00"
+        r
+        (as-> "/tmp/out.csv" _
+          (r-object "readr"   "read_csv"     {:file {:file _}})
+          (r-object "janitor" "clean_names"  {:dat  _})
+          (r-object "dplyr"   "mutate_if"    {".tbl" _
+                                              ".predicate" "is.character"
+                                              ".funs" "as.factor"})
+
+
+          (r-graph "ppsr"    "visualize_pps" {:df _
+                                              :y "'sale_price'"}))]
+
+
+        
+
+    (:result (ocpu/session base-url r :svg))))
+    ;; (with-open [in (io/input-stream (:result png))]
+    ;;   (ImageIO/read in))
+
+(def svg-pps (render-pps))
+
+(clerk/html
+ svg-pps)
 
 (require '[scicloj.ml.core :as ml]
          '[scicloj.ml.metamorph :as mm]
@@ -187,22 +254,24 @@
    (ds/split->seq :kfold)))
 
 (def cat-features [:OverallQual
-                   :GarageCars
                    :Neighborhood
-                   :BsmtCond
-                   :PoolQC
-                   :OverallCond
+                   :GarageCars
                    :ExterQual
+                   :BsmtQual
+                   :KitchenQual
+                   :Alley
+                   :FullBath
+
                    :TotRmsAbvGrd
                    :BedroomAbvGr])
 
 (def pipe-fn
   (ml/pipeline
-   (mm/replace-missing [:BsmtCond :PoolQC] :value :NA)
+   (mm/replace-missing cat-features :value :NA)
    (mm/select-columns
     (concat cat-features
             [
-             :GrLivArea :1stFlrSF :2ndFlrSF :TotalBsmtSF
+             :GrLivArea :TotalBsmtSF
              :GarageArea  :YearBuilt
 
 
