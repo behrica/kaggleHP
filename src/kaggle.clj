@@ -1,6 +1,8 @@
+^:nextjournal.clerk/no-cache
 (ns kaggle
 
   (:require [nextjournal.clerk :as clerk]
+            [nextjournal.clerk.viewer :as v]
             [tablecloth.api :as tc]
             [nextjournal.clerk :as clerk]
             [nextjournal.clerk.hashing :as h]
@@ -27,7 +29,6 @@
 
 
 
- 
 
 (comment
   (clerk/blob->result)
@@ -35,6 +36,8 @@
   (clerk/clear-cache!)
   (clerk/serve! {:browse? true})
   (clerk/serve! {:watch-paths ["notebooks" "src"]}))
+
+
 
 
 
@@ -55,21 +58,31 @@
                                  :MoSold
                                  :TotRmsAbvGrd
                                  :MSSubClass]
-                                (repeat :string)))))
+                                (repeat :string)))
+      (tc/rename-columns {
+                          :1stFlrSF :FirststFlrSF
+                          :2ndFlrSF :SecondFlrSF
+                          :3SsnPorch :ThirdsnPorch})))
 
 (def df (load-hp-data "train.csv.gz"))
 
-(defn ->table [df]
- (->
-  (concat [(tc/column-names df)]
-          (tc/rows df :as-seqs))
-  clerk/use-headers
-  clerk/table))
-  
+(tc/column-names df)
+
+
+(defn ->table [a-df]
+  (->
+   (concat [(tc/column-names a-df)]
+           (vec (tc/rows a-df :as-seqs)))
+   clerk/use-headers
+   clerk/table))
+
+
+
 
 ;;  # The data
 ^{::clerk/width :full}
 (->table df)
+
  
 
 
@@ -96,7 +109,7 @@
 (defn box-plot [var]
   (clerk/vl
    {:$schema "https://vega.github.io/schema/vega-lite/v5.json"
-    :data {:values (vec (tc/rows df :as-maps))}
+    :data {:values (tc/rows df :as-maps)}
     :encoding {:color {:field var :legend nil :type "nominal"}
                :x {:field var :type "nominal"}
                :y {:field :SalePrice
@@ -110,10 +123,10 @@
       :col-name
       vec))
 
-(def col-names-int16
+(def col-names-int
   (-> df
       tc/info
-      (tc/select-rows (fn [row] (= :int16 (:datatype row))))
+      (tc/select-rows (fn [row] (contains?  #{:int16 :int32} (:datatype row))))
       :col-name
       vec))
 
@@ -122,6 +135,7 @@
  {::clerk/width :full}
  {:$schema "https://vega.github.io/schema/vega-lite/v5.json"
   :data {:values (vec (tc/rows df :as-maps))}
+  :title "Categorical cols"
   :repeat col-names-categorical
   :columns 3
   :spec {
@@ -140,7 +154,8 @@
  {::clerk/width :full}
  {:$schema "https://vega.github.io/schema/vega-lite/v5.json"
   :data {:values (vec (tc/rows df :as-maps))}
-  :repeat col-names-int16
+  :title "Integer  cols"
+  :repeat col-names-int
   :columns 3
   :spec {
          :width 200
@@ -182,26 +197,19 @@
 
 ;; (def base-url "https://my-container-app.livelybay-00debe37.westeurope.azurecontainerapps.io")
 (def base-url "http://localhost:8080")
-(def candidate-features [:OverallQual
-                         :GarageCars
-                         :Neighborhood
-                         :BsmtCond
-                         :PoolQC
-                         :OverallCond
-                         :ExterQual
-                         :TotRmsAbvGrd
-                         :BedroomAbvGr
-                         :SalePrice])
+
 (-> df
     ;; (tc/select-columns candidate-features)
     (tc/write-csv! "/tmp/out.csv"))
 
 (defn r-object [library function params]
-  (-> (ocpu/object base-url :library library  :R function params)
-      :result
-      first
-      (str/split #"/")
-      (nth 3)))
+  (let [resp (ocpu/object base-url :library library  :R function params)]
+    (when (>  (:status resp) 201) (throw (ex-info "error" resp)))
+    (-> resp
+        :result
+        first
+        (str/split #"/")
+        (nth 3))))
 
 (defn r-graph [library function params]
   (-> (ocpu/object base-url :library library  :R function params)
@@ -210,35 +218,57 @@
 
 
 
-;; (nth 2)
-
-
-(defn render-pps []
+(defn calc-pps []
+  (println "calc pps")
   (let [
-        last-run  #inst "2022-02-16T14:59:44.871-00:00"
-        r
+        last-run  #inst "2022-02-16T20:42:44.871-00:02"
+        clean-data
         (as-> "/tmp/out.csv" _
           (r-object "readr"   "read_csv"     {:file {:file _}})
-          (r-object "janitor" "clean_names"  {:dat  _})
+          ;; (r-object "janitor" "clean_names"  {:dat  _})
           (r-object "dplyr"   "mutate_if"    {".tbl" _
                                               ".predicate" "is.character"
-                                              ".funs" "as.factor"})
+                                              ".funs" "as.factor"}))
 
 
-          (r-graph "ppsr"    "visualize_pps" {:df _
-                                              :y "'sale_price'"}))]
-
+        pps-graph
+        (r-graph "ppsr" "visualize_pps"
+                 {:df clean-data
+                  :y "'SalePrice'"})
+        pps-score
+        (r-object "ppsr" "score_predictors"
+                  {:df clean-data
+                   :y "'SalePrice'"})]
 
         
 
-    (:result (ocpu/session base-url r :svg))))
+    {:svg (:result (ocpu/session base-url pps-graph :svg))
+     :scores (:result (ocpu/session base-url (str "/ocpu/tmp/" pps-score "/R/.val" ) :json))}))
     ;; (with-open [in (io/input-stream (:result png))]
     ;;   (ImageIO/read in))
 
-(def svg-pps (render-pps))
+(def pps (calc-pps))
+
+;; (->
+
+;;  :result
+;;  tc/dataset)
+
+(def top-x-pps
+  (->> pps
+       :scores
+       (sort-by :pps)
+       reverse
+       (drop 1)
+       (take 10)
+       (map (comp keyword :x))))
+
+
+
+
 
 (clerk/html
- svg-pps)
+ (:svg pps))
 
 (require '[scicloj.ml.core :as ml]
          '[scicloj.ml.metamorph :as mm]
@@ -253,36 +283,35 @@
    train-data
    (ds/split->seq :kfold)))
 
-(def cat-features [:OverallQual
-                   :Neighborhood
-                   :GarageCars
-                   :ExterQual
-                   :BsmtQual
-                   :KitchenQual
-                   :Alley
-                   :FullBath
+(def cat-features (clojure.set/intersection
+                   (into #{} col-names-categorical)
+                   (into #{} top-x-pps)))
 
-                   :TotRmsAbvGrd
-                   :BedroomAbvGr])
+(def numeric-features (clojure.set/intersection
+                       (into #{} col-names-int16)
+                       (into #{} top-x-pps)))
+
 
 (def pipe-fn
   (ml/pipeline
    (mm/replace-missing cat-features :value :NA)
+
    (mm/select-columns
-    (concat cat-features
-            [
-             :GrLivArea :TotalBsmtSF
-             :GarageArea  :YearBuilt
+    (concat cat-features numeric-features [:SalePrice]))
+   ;; [
+   ;;  :GrLivArea :TotalBsmtSF
+   ;;  :GarageArea
 
 
-             :SalePrice]))
+   ;;  :SalePrice]
+
    (fn [ctx]
      (assoc ctx :metamorph.ml/full-ds train-data))
    (mm/transform-one-hot cat-features  :full)
 
    (mm/set-inference-target :SalePrice)
+
    {:metamorph/id :model}
-   
    (mm/model {:model-type :smile.regression/gradient-tree-boost
               :max-depth 20
               :max-nodes 10
@@ -290,15 +319,12 @@
               :trees 1000})))
 
 
-
-
-(def result
+(defn train []
+  (println "Train")
   (ml/evaluate-pipelines [pipe-fn] splits ml/rmse
                          :loss))
-                         ;; {:evaluation-handler-fn
-                         ;;  (fn [m] (dissoc m
-                         ;;                 ;; :pipe-fn
-                         ;;                 :metric-fn))}
+
+(def result (train))
 
 
 
