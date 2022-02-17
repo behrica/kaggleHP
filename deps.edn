@@ -1,7 +1,11 @@
-{:deps {;; org.slf4j/log4j-over-slf4j {:mvn/version  "1.7.36"}
+{:deps { ;; org.slf4j/log4j-over-slf4j {:mvn/version  "1.7.36"}
         ;; org.slf4j/jcl-over-slf4j {:mvn/version "1.7.36"}
         scicloj/scicloj.ml {:mvn/version "0.1.4" :exclusions [commons-logging/commons-logging log4j/log4j]}
-        io.github.nextjournal/clerk {:mvn/version "0.5.346" :exclusions [commons-logging/commons-logging log4j/log4j]}
+        techascent/tech.ml.dataset {:mvn/version "6.063"}
+        com.rpl/nippy-serializable-fns {:mvn/version "0.4.1"}
+        io.github.nextjournal/clerk
+        {:local/root "../clerk"}
+        ;; {:mvn/version "0.5.346" :exclusions [commons-logging/commons-logging log4j/log4j]}
         opencpu-clj/opencpu-clj {:mvn/version "0.3.1" :exclusions [commons-logging/commons-logging log4j/log4j]}}
         
 
